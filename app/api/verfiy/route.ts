@@ -1,21 +1,22 @@
 import { NextResponse } from "next/server";
 
-/**
- * CORS headers
- */
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*", // you can restrict to your Webflow domain later
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+function getCorsHeaders(origin: string | null) {
+  return {
+    "Access-Control-Allow-Origin": origin || "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Vary": "Origin",
+  };
+}
 
 /**
- * Handle preflight (CORS)
+ * Preflight handler
  */
-export async function OPTIONS() {
+export async function OPTIONS(req: Request) {
+  const origin = req.headers.get("origin");
   return new NextResponse(null, {
     status: 204,
-    headers: corsHeaders,
+    headers: getCorsHeaders(origin),
   });
 }
 
@@ -23,9 +24,11 @@ export async function OPTIONS() {
  * Verify Turnstile token
  */
 export async function POST(req: Request) {
+  const origin = req.headers.get("origin");
+  const corsHeaders = getCorsHeaders(origin);
+
   try {
-    const body = await req.json();
-    const token = body.token;
+    const { token } = await req.json();
 
     if (!token) {
       return NextResponse.json(
@@ -60,10 +63,7 @@ export async function POST(req: Request) {
     if (!result.success) {
       console.log("Blocked Turnstile:", result["error-codes"]);
       return NextResponse.json(
-        {
-          success: false,
-          errors: result["error-codes"] || [],
-        },
+        { success: false },
         { status: 403, headers: corsHeaders }
       );
     }
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
     );
 
   } catch (err) {
-    console.error("Turnstile verification error", err);
+    console.error("Turnstile error", err);
     return NextResponse.json(
       { success: false, error: "internal-error" },
       { status: 500, headers: corsHeaders }
