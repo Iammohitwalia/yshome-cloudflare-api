@@ -3,6 +3,18 @@ import { NextResponse } from "next/server";
 // Cloudflare Turnstile secret key (SERVER ONLY)
 const SECRET_KEY = process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY;
 
+// Helper to add CORS headers for Webflow → Next.js requests
+function withCors(body: any, status: number) {
+  return NextResponse.json(body, {
+    status,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    },
+  });
+}
+
 async function validateTurnstile(token: string, remoteip: string | null) {
   if (!SECRET_KEY) {
     console.error("Turnstile secret key is not configured");
@@ -41,10 +53,7 @@ export async function POST(req: Request) {
     const token = body.get("cf-turnstile-response");
 
     if (!token || typeof token !== "string") {
-      return NextResponse.json(
-        { success: false, error: "Missing Turnstile token" },
-        { status: 400 }
-      );
+      return withCors({ success: false, error: "Missing Turnstile token" }, 400);
     }
 
     const ip =
@@ -58,27 +67,32 @@ export async function POST(req: Request) {
     if (validation.success) {
       // Token is valid - process the form (you can extend this as needed)
       console.log("Valid submission from:", validation.hostname);
-      return NextResponse.json({
-        success: true,
-        message: "Human verified",
-        hostname: validation.hostname,
-      });
+      return withCors(
+        {
+          success: true,
+          message: "Human verified",
+          hostname: validation.hostname,
+        },
+        200
+      );
     } else {
       console.log("Invalid token:", validation["error-codes"]);
-      return NextResponse.json(
+      return withCors(
         {
           success: false,
           error: "Turnstile verification failed",
           details: validation["error-codes"] || [],
         },
-        { status: 400 }
+        400
       );
     }
   } catch (error) {
     console.error("Turnstile route error:", error);
-    return NextResponse.json(
-      { success: false, error: "Internal server error" },
-      { status: 500 }
-    );
+    return withCors({ success: false, error: "Internal server error" }, 500);
   }
+}
+
+// Handle CORS preflight requests from the browser
+export function OPTIONS() {
+  return withCors({}, 200);
 }
