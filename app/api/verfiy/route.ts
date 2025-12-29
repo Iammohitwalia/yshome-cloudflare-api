@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 
+// Ensure route is dynamic and handles CORS properly
+export const dynamic = 'force-dynamic';
+
 function getCorsHeaders(origin: string | null) {
+  const allowedOrigin = origin || "*";
   return {
-    "Access-Control-Allow-Origin": origin || "*",
+    "Access-Control-Allow-Origin": allowedOrigin,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Credentials": "false",
+    "Access-Control-Max-Age": "86400",
     "Vary": "Origin",
   };
 }

@@ -51,24 +51,35 @@
         return;
       }
 
+      // Track if verification passed - CRITICAL for preventing submission
+      let verificationPassed = false;
+
       // Handle form submission
-      form.addEventListener("submit", async function (e) {
+      const handleSubmit = async function (e) {
         e.preventDefault();
+        e.stopPropagation(); // Stop any other handlers
+
+        // If verification already passed, allow submission
+        if (verificationPassed) {
+          console.log("✅ Verification already passed, allowing submission");
+          form.removeEventListener("submit", handleSubmit);
+          HTMLFormElement.prototype.submit.call(form);
+          return;
+        }
 
         // Prevent double submission
         if (isVerifying) {
           console.log("⏳ Verification already in progress...");
-          return;
+          return false;
         }
 
         // Check if token exists
         if (!token) {
           alert("⚠️ Please complete the verification challenge first.");
-          // Reset widget so user can try again
           if (widgetId !== null) {
             window.turnstile.reset(widgetId);
           }
-          return;
+          return false;
         }
 
         isVerifying = true;
@@ -82,6 +93,8 @@
         }
         submitBtn.disabled = true;
 
+        let shouldSubmit = false;
+
         try {
           console.log("🔒 Sending token to server for verification...");
           
@@ -94,57 +107,33 @@
             }
           );
 
+          // Check if response is ok BEFORE trying to parse JSON
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+          }
+
           const data = await res.json();
           console.log("📡 Server response:", data);
 
-          if (!res.ok || !data.success) {
+          if (!data || !data.success) {
             // Verification failed - block submission
-            console.error("🚫 Spam detected or verification failed. Submission blocked.");
+            console.error("🚫 Spam detected or verification failed. Submission BLOCKED.");
             alert("❌ Verification failed. Please try again.");
-            
-            // Reset widget and token
-            token = null;
-            if (widgetId !== null) {
-              window.turnstile.reset(widgetId);
-            }
-            
-            // Restore button
-            if (submitBtn.tagName === 'BUTTON') {
-              submitBtn.textContent = originalSubmitText;
-            } else {
-              submitBtn.value = originalSubmitText;
-            }
-            submitBtn.disabled = false;
-            isVerifying = false;
-            return;
-          }
-
-          // ✅ Verification passed - allow Webflow form submission
-          console.log("✅ Verification passed! Submitting form...");
-          
-          // Restore button before submit
-          if (submitBtn.tagName === 'BUTTON') {
-            submitBtn.textContent = originalSubmitText;
+            shouldSubmit = false;
           } else {
-            submitBtn.value = originalSubmitText;
+            // ✅ Verification passed
+            console.log("✅ Verification passed!");
+            verificationPassed = true;
+            shouldSubmit = true;
           }
-          submitBtn.disabled = false;
-          
-          // Remove event listener and submit normally (preserves GET method + redirect)
-          form.removeEventListener("submit", arguments.callee);
-          HTMLFormElement.prototype.submit.call(form);
 
         } catch (err) {
-          console.error("❌ Verification error:", err);
-          alert("⚠️ Verification service unavailable. Please try again later.");
-          
-          // Reset widget
-          token = null;
-          if (widgetId !== null) {
-            window.turnstile.reset(widgetId);
-          }
-          
-          // Restore button
+          // ANY error (CORS, network, etc.) = BLOCK submission
+          console.error("❌ Verification error (BLOCKING submission):", err);
+          alert("⚠️ Verification service unavailable. Submission blocked. Please try again later.");
+          shouldSubmit = false;
+        } finally {
+          // Always restore button state
           if (submitBtn.tagName === 'BUTTON') {
             submitBtn.textContent = originalSubmitText;
           } else {
@@ -152,8 +141,28 @@
           }
           submitBtn.disabled = false;
           isVerifying = false;
+
+          // Reset widget if verification failed
+          if (!shouldSubmit) {
+            token = null;
+            if (widgetId !== null) {
+              window.turnstile.reset(widgetId);
+            }
+            return false; // CRITICAL: prevent submission
+          }
         }
-      });
+
+        // Only submit if verification passed
+        if (shouldSubmit && verificationPassed) {
+          console.log("✅ Allowing form submission...");
+          form.removeEventListener("submit", handleSubmit);
+          HTMLFormElement.prototype.submit.call(form);
+        }
+
+        return false; // Always prevent default
+      };
+
+      form.addEventListener("submit", handleSubmit, true); // Use capture phase
     });
   }
 
