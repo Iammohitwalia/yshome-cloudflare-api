@@ -46,9 +46,19 @@ export async function POST(req: Request) {
       );
     }
 
+    // Get client IP for better security
+    const remoteip =
+      req.headers.get("CF-Connecting-IP") ||
+      req.headers.get("X-Forwarded-For") ||
+      req.headers.get("x-real-ip") ||
+      null;
+
     const formData = new FormData();
     formData.append("secret", secret);
     formData.append("response", token);
+    if (remoteip) {
+      formData.append("remoteip", remoteip);
+    }
 
     const cfRes = await fetch(
       "https://challenges.cloudflare.com/turnstile/v0/siteverify",

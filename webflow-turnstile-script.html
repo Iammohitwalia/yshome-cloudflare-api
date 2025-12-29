@@ -1,0 +1,192 @@
+<!-- Cloudflare Turnstile Script for Webflow -->
+<!-- Paste this in Project Settings → Custom Code → Footer -->
+
+<script>
+(function () {
+  function initTurnstile() {
+    // Wait for Turnstile API to be ready
+    if (typeof window.turnstile === 'undefined') {
+      console.error('Turnstile API not loaded');
+      return;
+    }
+
+    document.querySelectorAll("form").forEach(function (form) {
+      const submitBtn = form.querySelector('input[type="submit"], button[type="submit"]');
+      if (!submitBtn) return;
+
+      // Create container for Turnstile widget
+      const turnstileBox = document.createElement("div");
+      turnstileBox.className = "cf-turnstile-container";
+      turnstileBox.style.marginBottom = "16px";
+      turnstileBox.style.minHeight = "65px"; // Ensure space for widget
+
+      // Insert BEFORE submit button
+      submitBtn.parentNode.insertBefore(turnstileBox, submitBtn);
+
+      let token = null;
+      let widgetId = null;
+      let isVerifying = false;
+
+      // Render Turnstile with INTERACTIVE mode (forces challenge)
+      try {
+        widgetId = window.turnstile.render(turnstileBox, {
+          sitekey: "0x4AAAAAACHF7f3F-7Drnnj7",
+          theme: "light",
+          size: "normal", // Normal size ensures challenge appears
+          callback: function (t) {
+            token = t;
+            console.log("✅ Turnstile token generated:", t.substring(0, 20) + "...");
+          },
+          "error-callback": function () {
+            token = null;
+            console.error("❌ Turnstile error - challenge failed");
+          },
+          "expired-callback": function () {
+            token = null;
+            console.warn("⚠️ Turnstile token expired");
+          }
+        });
+      } catch (err) {
+        console.error("Failed to render Turnstile:", err);
+        return;
+      }
+
+      // Handle form submission
+      form.addEventListener("submit", async function (e) {
+        e.preventDefault();
+
+        // Prevent double submission
+        if (isVerifying) {
+          console.log("⏳ Verification already in progress...");
+          return;
+        }
+
+        // Check if token exists
+        if (!token) {
+          alert("⚠️ Please complete the verification challenge first.");
+          // Reset widget so user can try again
+          if (widgetId !== null) {
+            window.turnstile.reset(widgetId);
+          }
+          return;
+        }
+
+        isVerifying = true;
+        const originalSubmitText = submitBtn.value || submitBtn.textContent;
+        
+        // Show loading state
+        if (submitBtn.tagName === 'BUTTON') {
+          submitBtn.textContent = "Verifying...";
+        } else {
+          submitBtn.value = "Verifying...";
+        }
+        submitBtn.disabled = true;
+
+        try {
+          console.log("🔒 Sending token to server for verification...");
+          
+          const res = await fetch(
+            "https://yshome-cloudflare-api.vercel.app/api/verify",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ token })
+            }
+          );
+
+          const data = await res.json();
+          console.log("📡 Server response:", data);
+
+          if (!res.ok || !data.success) {
+            // Verification failed - block submission
+            console.error("🚫 Spam detected or verification failed. Submission blocked.");
+            alert("❌ Verification failed. Please try again.");
+            
+            // Reset widget and token
+            token = null;
+            if (widgetId !== null) {
+              window.turnstile.reset(widgetId);
+            }
+            
+            // Restore button
+            if (submitBtn.tagName === 'BUTTON') {
+              submitBtn.textContent = originalSubmitText;
+            } else {
+              submitBtn.value = originalSubmitText;
+            }
+            submitBtn.disabled = false;
+            isVerifying = false;
+            return;
+          }
+
+          // ✅ Verification passed - allow Webflow form submission
+          console.log("✅ Verification passed! Submitting form...");
+          
+          // Restore button before submit
+          if (submitBtn.tagName === 'BUTTON') {
+            submitBtn.textContent = originalSubmitText;
+          } else {
+            submitBtn.value = originalSubmitText;
+          }
+          submitBtn.disabled = false;
+          
+          // Remove event listener and submit normally (preserves GET method + redirect)
+          form.removeEventListener("submit", arguments.callee);
+          HTMLFormElement.prototype.submit.call(form);
+
+        } catch (err) {
+          console.error("❌ Verification error:", err);
+          alert("⚠️ Verification service unavailable. Please try again later.");
+          
+          // Reset widget
+          token = null;
+          if (widgetId !== null) {
+            window.turnstile.reset(widgetId);
+          }
+          
+          // Restore button
+          if (submitBtn.tagName === 'BUTTON') {
+            submitBtn.textContent = originalSubmitText;
+          } else {
+            submitBtn.value = originalSubmitText;
+          }
+          submitBtn.disabled = false;
+          isVerifying = false;
+        }
+      });
+    });
+  }
+
+  // Load Cloudflare Turnstile script
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() {
+      const script = document.createElement("script");
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+      script.async = true;
+      script.defer = true;
+      script.onload = function() {
+        // Wait a bit for Turnstile to fully initialize
+        setTimeout(initTurnstile, 100);
+      };
+      script.onerror = function() {
+        console.error("Failed to load Turnstile script");
+      };
+      document.head.appendChild(script);
+    });
+  } else {
+    // DOM already loaded
+    const script = document.createElement("script");
+    script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+    script.async = true;
+    script.defer = true;
+    script.onload = function() {
+      setTimeout(initTurnstile, 100);
+    };
+    script.onerror = function() {
+      console.error("Failed to load Turnstile script");
+    };
+    document.head.appendChild(script);
+  }
+})();
+</script>
+
